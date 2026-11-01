@@ -1,0 +1,14 @@
+; Development project for the studio's shared add-ons. Games vendor the folders
+; under addons/ (not this project file); see README.md.
+
+config_version=5
+
+[application]
+
+config/name="LRD Shared"
+config/version="0.1.0"
+config/features=PackedStringArray("4.7")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gdUnit4/plugin.cfg")
