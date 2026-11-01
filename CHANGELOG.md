@@ -2,6 +2,13 @@
 
 Versions are per add-on. Games record which version they vendor.
 
+## lrd_save 0.1.0 (2026-11-01)
+
+- First release. Toward dmchaledev/lrd_shared#2 ("a save library with atomic writes and a backup fallback").
+- `LRDSaveFile`: atomic JSON writes (`<path>.tmp`, read back, then swapped in), the previous save kept as `<path>.bak`, reads that fall back to the backup when the save is missing, empty or corrupt, and one-time adoption of pre-slot legacy files.
+- `LRDSaveSlots`: per-slot paths, lazy initialisation from every accessor (playbook GDT-32), slot metadata reconciled with the files on disk, and `new_game()` clearing the slot's save and derived files.
+- Sources: Starbrew Station (atomic writes), Bikini Heaven (backup fallback), Fragile Frontier (`SaveSlotManager`, `JsonFileUtils.migrate_legacy_file`).
+
 ## lrd_run_log 0.1.0 (2026-11-01)
 
 - First release, extracted from Xerophobia (`RunLog`, `BuildStamp`, `UserPaths`, `tools/run_report.gd`). See dmchaledev/lrd_shared#1.

@@ -13,8 +13,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "gdtoolkit==4.*"
-      - run: gdformat -l 120 --check addons/lrd_run_log tests
-      - run: gdlint addons/lrd_run_log tests
+      - run: gdformat -l 120 --check addons/lrd_run_log addons/lrd_save tests
+      - run: gdlint addons/lrd_run_log addons/lrd_save tests
 
   gdunit4:
     runs-on: ubuntu-latest
