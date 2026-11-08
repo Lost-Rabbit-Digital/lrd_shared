@@ -50,22 +50,46 @@ static func version() -> String:
 
 ## The full sha at HEAD, or [constant UNKNOWN].
 ##
-## Handles a branch HEAD (symbolic ref, loose or packed) and a detached HEAD.
+## Handles a branch HEAD (symbolic ref, loose or packed) and a detached HEAD, in
+## a plain checkout or in a linked worktree or submodule, where `.git` is a file
+## pointing at the real git dir and branch refs live in the shared `commondir`.
 static func commit() -> String:
-	var head: String = _read(git_dir + "HEAD")
+	var dirs: PackedStringArray = _git_dirs()
+	var head: String = _read(dirs[0] + "HEAD")
 	if head == "":
 		return UNKNOWN
 	if not head.begins_with("ref: "):
 		return head  # Detached: HEAD is the sha.
 	var ref: String = head.substr(5).strip_edges()
-	var loose: String = _read(git_dir + ref)
-	if loose != "":
-		return loose
-	return _packed_ref(ref)
+	for dir: String in dirs:
+		var loose: String = _read(dir + ref)
+		if loose != "":
+			return loose
+	return _packed_ref(dirs[dirs.size() - 1], ref)
 
 
-static func _packed_ref(ref: String) -> String:
-	var packed: String = _read(git_dir + "packed-refs")
+## [the dir holding HEAD, the dir holding shared refs], each ending in "/". The
+## same dir twice for a plain checkout.
+static func _git_dirs() -> PackedStringArray:
+	var dir: String = git_dir if git_dir.ends_with("/") else git_dir + "/"
+	var pointer: String = _read(dir.trim_suffix("/"))
+	if pointer.begins_with("gitdir:"):
+		dir = _join(dir.trim_suffix("/").get_base_dir(), pointer.substr(7).strip_edges()) + "/"
+	var common: String = _read(dir + "commondir")
+	if common == "":
+		return PackedStringArray([dir, dir])
+	return PackedStringArray([dir, _join(dir.trim_suffix("/"), common) + "/"])
+
+
+## [param path] if absolute, else resolved against [param base], as an OS path.
+static func _join(base: String, path: String) -> String:
+	if path.is_absolute_path() and not path.begins_with("res://") and not path.begins_with("user://"):
+		return path.simplify_path()
+	return ProjectSettings.globalize_path(base).path_join(path).simplify_path()
+
+
+static func _packed_ref(dir: String, ref: String) -> String:
+	var packed: String = _read(dir + "packed-refs")
 	for line: String in packed.split("\n"):
 		var parts: PackedStringArray = line.strip_edges().split(" ")
 		if parts.size() == 2 and parts[1] == ref:
