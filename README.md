@@ -6,7 +6,7 @@ The single versioned source for code shared between Lost Rabbit Digital's games.
 
 | Add-on | Version | What it does |
 | --- | --- | --- |
-| [`lrd_run_log`](addons/lrd_run_log/README.md) | 0.1.0 | Structured playtest run log: one row per run, stamped with schema, build and driver, plus report helpers |
+| [`lrd_run_log`](addons/lrd_run_log/README.md) | 0.1.1 | Structured playtest run log: one row per run, stamped with schema, build and driver, plus report helpers |
 | [`lrd_save`](addons/lrd_save/README.md) | 0.1.0 | Crash-safe JSON saves (atomic write, backup fallback) and save slots that route every per-save file through the active slot |
 
 Planned, tracked in dmchaledev/lrd_shared#2: `lrd_analytics` (with its player consent and opt-out), `rabbit_developer_console`, `lrd_mcp_bridge`, the capture tool, the user-data tool, and the localization and store scripts.
