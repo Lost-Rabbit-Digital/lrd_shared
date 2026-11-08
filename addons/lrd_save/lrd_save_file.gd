@@ -2,9 +2,11 @@
 ##
 ## A plain `FileAccess.open(path, WRITE)` truncates the save first, so a crash,
 ## a full disk or a power cut mid-write leaves the player with an empty or half
-## file. Here a write goes to `<path>.tmp`, is read back and parsed, and only then
-## replaces the save, keeping the previous one as `<path>.bak`. A read that finds
-## the save missing or corrupt falls back to the backup.
+## file. Here a write goes to `<path>.tmp`, is read back and parsed, the current
+## save is copied to `<path>.bak`, and only then is the temp file renamed over
+## the save. The save itself is never moved aside, so at every step the save or
+## its backup holds a complete copy. A read that finds the save missing or
+## corrupt falls back to the backup.
 ##
 ## Combines practice that lived in one game each: atomic writes (Starbrew
 ## Station's UnifiedSaveService), a backup fallback (Bikini Heaven) and adopting
@@ -18,12 +20,34 @@ extends RefCounted
 const TMP_SUFFIX: String = ".tmp"
 const BAK_SUFFIX: String = ".bak"
 
+## The steps of [method write_json], as passed to the test seam [member fault].
+const STEP_OPEN_TMP: StringName = &"open_tmp"
+const STEP_WRITE_TMP: StringName = &"write_tmp"
+const STEP_VERIFY_TMP: StringName = &"verify_tmp"
+const STEP_BACKUP: StringName = &"backup"
+const STEP_REPLACE: StringName = &"replace"
+
 ## True when the most recent [method read_json] had to use the backup.
 static var last_read_used_backup: bool = false
 
+## Test seam for [method write_json]. When valid, it is called as
+## `fault.call(step, path)` just before each step (the `STEP_*` constants), and
+## a non-OK return makes that step fail with that error. It may touch the disk
+## first, to stage a half-finished step. Never set it in a game.
+static var fault: Callable = Callable()
+
 
 ## Writes [param data] as JSON to [param path] atomically. Returns OK, or the
-## error that stopped it; on any failure the existing save is untouched.
+## error that stopped it.
+##
+## On any failure the save at [param path] keeps its previous contents (or stays
+## absent) and no temp file is left behind. The backup is refreshed from the
+## previous save just before the swap, and only when that save parses, so a
+## corrupt save never replaces a good backup.
+##
+## Not covered: after the file is closed the OS may still hold the data in its
+## cache (Godot exposes no fsync), so a power cut right after a write can lose
+## that write. The previous save or its backup then remains.
 static func write_json(path: String, data: Variant, indent: String = "\t") -> Error:
 	var text: String = JSON.stringify(data, indent)
 	var dir: String = path.get_base_dir()
@@ -32,29 +56,55 @@ static func write_json(path: String, data: Variant, indent: String = "\t") -> Er
 		if made != OK:
 			return made
 	var tmp: String = path + TMP_SUFFIX
-	var file: FileAccess = FileAccess.open(tmp, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_string(text)
+	var file: FileAccess = null
+	var opened: Error = _step(STEP_OPEN_TMP, path)
+	if opened == OK:
+		file = FileAccess.open(tmp, FileAccess.WRITE)
+		if file == null:
+			opened = FileAccess.get_open_error()
+			opened = FAILED if opened == OK else opened
+	if opened != OK:
+		_discard(tmp)
+		return opened
+	var written: Error = _step(STEP_WRITE_TMP, path)
+	if written == OK and not file.store_string(text):
+		written = ERR_FILE_CANT_WRITE
 	file.flush()
-	var write_error: Error = file.get_error()
+	if written == OK:
+		written = file.get_error()
 	file.close()
-	if write_error != OK:
-		DirAccess.remove_absolute(tmp)
-		return write_error
+	if written != OK:
+		_discard(tmp)
+		return written
 	# Read it back before trusting it: a short write is caught here, not on load.
-	if _parse(FileAccess.get_file_as_string(tmp)) == null and text != "null":
-		DirAccess.remove_absolute(tmp)
-		return ERR_FILE_CORRUPT
+	var verified: Error = _step(STEP_VERIFY_TMP, path)
+	if verified == OK and _parse(FileAccess.get_file_as_string(tmp)) == null and text != "null":
+		verified = ERR_FILE_CORRUPT
+	if verified != OK:
+		_discard(tmp)
+		return verified
+	# Copy, never move, the current save to the backup: the save stays where it
+	# is until the rename below replaces it in one step.
 	var bak: String = path + BAK_SUFFIX
-	if FileAccess.file_exists(path):
-		if FileAccess.file_exists(bak):
-			DirAccess.remove_absolute(bak)
-		var backed_up: Error = DirAccess.rename_absolute(path, bak)
-		if backed_up != OK:
-			DirAccess.remove_absolute(tmp)
-			return backed_up
-	return DirAccess.rename_absolute(tmp, path)
+	var backed_up: bool = false
+	if _read(path) != null:
+		var copied: Error = _step(STEP_BACKUP, path)
+		if copied == OK:
+			copied = DirAccess.copy_absolute(path, bak)
+		if copied != OK:
+			_discard(tmp)
+			return copied
+		backed_up = true
+	var replaced: Error = _step(STEP_REPLACE, path)
+	if replaced == OK:
+		replaced = DirAccess.rename_absolute(tmp, path)
+	if replaced != OK:
+		# A rename that removed the save before failing (it is remove-then-move
+		# on some platforms) must not leave it gone: restore the copy just taken.
+		if backed_up and not FileAccess.file_exists(path) and not DirAccess.dir_exists_absolute(path):
+			DirAccess.copy_absolute(bak, path)
+		_discard(tmp)
+	return replaced
 
 
 ## Reads and parses [param path], falling back to its backup when the save is
@@ -105,6 +155,17 @@ static func migrate_legacy_file(legacy_path: String, new_path: String) -> bool:
 		return false
 	DirAccess.remove_absolute(legacy_path)
 	return true
+
+
+static func _step(step: StringName, path: String) -> Error:
+	if not fault.is_valid():
+		return OK
+	return fault.call(step, path)
+
+
+static func _discard(tmp: String) -> void:
+	if FileAccess.file_exists(tmp):
+		DirAccess.remove_absolute(tmp)
 
 
 static func _read(path: String) -> Variant:
