@@ -23,7 +23,8 @@ extends RefCounted
 signal slot_changed(slot: int)
 signal metadata_changed(slot: int, metadata: Dictionary)
 
-## Where slot folders live: `<save_dir>slot_<n>/<file>`.
+## Where slot folders live: `<save_dir>slot_<n>/<file>`. Under a test runner it
+## is redirected like every other path; see [method LRDSaveFile.resolve_path].
 var save_dir: String = "user://saves/"
 ## Number of slots.
 var slot_count: int = 3
@@ -53,7 +54,7 @@ func ensure_initialized() -> void:
 	if _initialized:
 		return
 	_initialized = true
-	DirAccess.make_dir_recursive_absolute(save_dir)
+	DirAccess.make_dir_recursive_absolute(_save_dir())
 	_active = _load_active()
 	var stored: Variant = LRDSaveFile.read_json(_metadata_path())
 	_metadata = {}
@@ -64,11 +65,12 @@ func ensure_initialized() -> void:
 	reconcile_with_disk()
 
 
-## The path of [param file] in [param slot] (the active slot by default).
+## The path of [param file] in [param slot] (the active slot by default), already
+## redirected under a test runner, so it is safe to open directly.
 func path(file: String, slot: int = -1) -> String:
 	ensure_initialized()
 	var index: int = _active if slot < 0 else slot
-	return "%sslot_%d/%s" % [save_dir, index, file]
+	return "%sslot_%d/%s" % [_save_dir(), index, file]
 
 
 func active_slot() -> int:
@@ -173,8 +175,13 @@ func _save_metadata() -> void:
 
 
 func _metadata_path() -> String:
-	return save_dir + "slot_metadata.json"
+	return _save_dir() + "slot_metadata.json"
 
 
 func _active_path() -> String:
-	return save_dir + "active_slot.json"
+	return _save_dir() + "active_slot.json"
+
+
+# The save folder actually used: under a test runner, never the player's own.
+func _save_dir() -> String:
+	return LRDSaveFile.resolve_path(save_dir)

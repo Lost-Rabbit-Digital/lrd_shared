@@ -8,6 +8,10 @@
 ## its backup holds a complete copy. A read that finds the save missing or
 ## corrupt falls back to the backup.
 ##
+## Under a test runner or harness, `user://` paths are redirected the way
+## `LRDUserPaths` (from lrd_run_log) decides, when that add-on is in the
+## project; see [method resolve_path].
+##
 ## Combines practice that lived in one game each: atomic writes (Starbrew
 ## Station's UnifiedSaveService), a backup fallback (Bikini Heaven) and adopting
 ## pre-slot legacy files (Fragile Frontier's JsonFileUtils).
@@ -30,11 +34,39 @@ const STEP_REPLACE: StringName = &"replace"
 ## True when the most recent [method read_json] had to use the backup.
 static var last_read_used_backup: bool = false
 
+## The global class [method resolve_path] defers to. A test hook: games leave it.
+static var user_paths_class: StringName = &"LRDUserPaths"
+
 ## Test seam for [method write_json]. When valid, it is called as
 ## `fault.call(step, path)` just before each step (the `STEP_*` constants), and
 ## a non-OK return makes that step fail with that error. It may touch the disk
 ## first, to stage a half-finished step. Never set it in a game.
 static var fault: Callable = Callable()
+
+# The LRDUserPaths script, once looked up (null when the add-on is absent).
+static var _user_paths: Script = null
+static var _user_paths_looked_up: bool = false
+
+
+## The path actually used for [param path]. Every public function here resolves
+## its paths through this, and so does [LRDSaveSlots].
+##
+## When lrd_run_log's `LRDUserPaths` is in the project, its `resolve()` decides:
+## under a test runner or harness a `user://` path moves under its test root, so
+## tests and bots never touch the player's saves. It is found by class name at
+## runtime, so lrd_save works without lrd_run_log; then paths are used as given.
+## Resolving twice is harmless.
+static func resolve_path(path: String) -> String:
+	var user_paths: Script = _user_paths_script()
+	if user_paths == null:
+		return path
+	return str(user_paths.call(&"resolve", path))
+
+
+## Test hook: forget the cached `LRDUserPaths` lookup.
+static func reset_path_resolution_for_tests() -> void:
+	_user_paths = null
+	_user_paths_looked_up = false
 
 
 ## Writes [param data] as JSON to [param path] atomically. Returns OK, or the
@@ -49,6 +81,7 @@ static var fault: Callable = Callable()
 ## cache (Godot exposes no fsync), so a power cut right after a write can lose
 ## that write. The previous save or its backup then remains.
 static func write_json(path: String, data: Variant, indent: String = "\t") -> Error:
+	path = resolve_path(path)
 	var text: String = JSON.stringify(data, indent)
 	var dir: String = path.get_base_dir()
 	if dir != "" and not DirAccess.dir_exists_absolute(dir):
@@ -110,6 +143,7 @@ static func write_json(path: String, data: Variant, indent: String = "\t") -> Er
 ## Reads and parses [param path], falling back to its backup when the save is
 ## missing or doesn't parse. Returns null when neither is usable.
 static func read_json(path: String) -> Variant:
+	path = resolve_path(path)
 	last_read_used_backup = false
 	var data: Variant = _read(path)
 	if data != null:
@@ -129,11 +163,13 @@ static func read_json_or(path: String, default_value: Variant) -> Variant:
 
 ## Whether a save (or its backup) exists at [param path].
 static func exists(path: String) -> bool:
+	path = resolve_path(path)
 	return FileAccess.file_exists(path) or FileAccess.file_exists(path + BAK_SUFFIX)
 
 
 ## Removes a save, its backup and any stray temp file.
 static func remove(path: String) -> void:
+	path = resolve_path(path)
 	for candidate: String in [path, path + BAK_SUFFIX, path + TMP_SUFFIX]:
 		if FileAccess.file_exists(candidate):
 			DirAccess.remove_absolute(candidate)
@@ -146,6 +182,8 @@ static func remove(path: String) -> void:
 ## is confirmed on disk, so a failed write can never lose it. Returns true when
 ## a migration happened.
 static func migrate_legacy_file(legacy_path: String, new_path: String) -> bool:
+	legacy_path = resolve_path(legacy_path)
+	new_path = resolve_path(new_path)
 	if legacy_path == new_path or exists(new_path) or not FileAccess.file_exists(legacy_path):
 		return false
 	var legacy: Variant = _read(legacy_path)
@@ -166,6 +204,23 @@ static func _step(step: StringName, path: String) -> Error:
 static func _discard(tmp: String) -> void:
 	if FileAccess.file_exists(tmp):
 		DirAccess.remove_absolute(tmp)
+
+
+static func _user_paths_script() -> Script:
+	if _user_paths_looked_up:
+		return _user_paths
+	_user_paths_looked_up = true
+	for entry: Dictionary in ProjectSettings.get_global_class_list():
+		if StringName(str(entry.get("class", ""))) != user_paths_class:
+			continue
+		var script: Script = load(str(entry.get("path", ""))) as Script
+		if script == null:
+			break
+		for method: Dictionary in script.get_script_method_list():
+			if method.get("name", "") == "resolve":
+				_user_paths = script
+		break
+	return _user_paths
 
 
 static func _read(path: String) -> Variant:
