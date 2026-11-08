@@ -13,12 +13,15 @@ extends RefCounted
 
 const TEST_ROOT: String = "user://test_runner/"
 
-## Command-line fragments that identify a test runner. gdUnit4's CLI tool, GUT's
-## runner, and the `res://tests/run_tests.gd` entry point the studio's games use.
-## Projects with another runner append to this before anything is opened.
+## Command-line fragments that identify a test runner. gdUnit4's CLI tool and the
+## runner scene its editor panel launches (tests run from the editor never pass
+## the CLI tool), GUT's runner, and the `res://tests/run_tests.gd` entry point the
+## studio's games use. Projects with another runner append to this before
+## anything is opened.
 static var runner_markers: PackedStringArray = PackedStringArray(
 	[
 		"GdUnitCmdTool.gd",
+		"GdUnitTestRunner.tscn",
 		"gut_cmdln.gd",
 		"tests/run_tests.gd",
 	]

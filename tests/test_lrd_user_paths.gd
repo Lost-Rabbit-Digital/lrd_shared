@@ -14,6 +14,18 @@ func test_test_runners_and_named_bots_are_harnesses() -> void:
 	assert_bool(LRDUserPaths.is_harness(PackedStringArray(["--driver=smoke"]))).is_true()
 
 
+## Running tests from the editor's gdUnit4 panel never passes GdUnitCmdTool.gd:
+## the editor starts a child process on the runner scene (or plays it, when
+## debugging). Those runs used to write into the developer's real profile.
+func test_tests_run_from_the_editor_are_harnesses() -> void:
+	var editor_run := PackedStringArray(
+		["--no-window", "--path", "D:/Game", "res://addons/gdUnit4/src/core/runners/GdUnitTestRunner.tscn"]
+	)
+	assert_bool(LRDUserPaths.is_harness(editor_run)).is_true()
+	var debug_run := PackedStringArray(["--scene", "res://addons/gdUnit4/src/core/runners/GdUnitTestRunner.tscn"])
+	assert_bool(LRDUserPaths.is_harness(debug_run)).is_true()
+
+
 func test_a_player_is_not_a_harness() -> void:
 	assert_bool(LRDUserPaths.is_harness(PackedStringArray(["--fullscreen"]))).is_false()
 	assert_bool(LRDUserPaths.is_harness(PackedStringArray(["--driver=human"]))).is_false()
