@@ -2,6 +2,11 @@
 
 Versions are per add-on. Games record which version they vendor.
 
+## lrd_run_log 0.1.1 (2026-11-07)
+
+- `LRDUserPaths`: tests run from the editor's gdUnit4 panel are now recognised as a test run (`GdUnitTestRunner.tscn` marker). The editor never passes `GdUnitCmdTool.gd`, so those runs wrote run-log rows (and anything else resolved through `LRDUserPaths`) into the developer's real profile.
+- `LRDBuildStamp`: reads the commit in a linked git worktree or submodule, where `.git` is a file (`gitdir:`) and branch refs live in the shared `commondir`. Rows from those checkouts used to carry the bare version with no sha.
+
 ## lrd_save 0.1.0 (2026-11-01)
 
 - First release. Toward dmchaledev/lrd_shared#2 ("a save library with atomic writes and a backup fallback").
